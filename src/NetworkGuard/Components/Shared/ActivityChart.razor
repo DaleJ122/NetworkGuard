@@ -1,0 +1,346 @@
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject IJSRuntime JS
+@implements IDisposable
+
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h6 class="mb-0">@Title</h6>
+        <div class="d-flex gap-2 align-items-center">
+            <select class="form-select form-select-sm" style="width: 140px;" value="@_timeRange" @onchange="OnTimeRangeChanged">
+                <option value="1">Past hour</option>
+                <option value="3">Past 3 hours</option>
+                <option value="6">Past 6 hours</option>
+                <option value="12">Past 12 hours</option>
+                <option value="24">Full day</option>
+            </select>
+            <button class="btn btn-sm btn-outline-secondary" @onclick="OpenFullscreen" title="Expand">
+                <i class="bi bi-arrows-fullscreen"></i>
+            </button>
+        </div>
+    </div>
+    <div class="card-body chart-container" style="height: @(Height)px;">
+        <canvas id="@_canvasId"></canvas>
+    </div>
+</div>
+
+@if (_showFullscreen)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.8);" @onclick="CloseFullscreen">
+        <div class="modal-dialog" style="max-width: 1800px; margin: 2rem 2rem;" @onclick:stopPropagation="true">
+            <div class="modal-content" style="background-color: #1a1d21; border: 1px solid #2a2d35;">
+                <div class="modal-header border-bottom border-secondary">
+                    <h5 class="modal-title">@Title</h5>
+                    <div class="d-flex gap-2 align-items-center">
+                        <select class="form-select form-select-sm" style="width: 140px;" value="@_timeRange" @onchange="OnTimeRangeChangedFullscreen">
+                            <option value="1">Past hour</option>
+                            <option value="3">Past 3 hours</option>
+                            <option value="6">Past 6 hours</option>
+                            <option value="12">Past 12 hours</option>
+                            <option value="24">Full day</option>
+                        </select>
+                        <button type="button" class="btn-close" @onclick="CloseFullscreen"></button>
+                    </div>
+                </div>
+                <div class="modal-body p-3" style="height: calc(100vh - 150px);">
+                    <canvas id="@_fullscreenCanvasId"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string Title { get; set; } = "Activity";
+    [Parameter] public bool FlaggedOnly { get; set; }
+    [Parameter] public DateOnly? Date { get; set; }
+    [Parameter] public string? DeviceFilter { get; set; }
+    [Parameter] public int Height { get; set; } = 250;
+    [Parameter] public int MinRequests { get; set; } = 10;
+
+    private string _canvasId = $"chart-{Guid.NewGuid():N}";
+    private string _fullscreenCanvasId = $"chart-fs-{Guid.NewGuid():N}";
+    private Timer? _refreshTimer;
+    private bool _rendered;
+    private bool _showFullscreen;
+    private int _timeRange = 24;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _rendered = true;
+            await RenderChartAsync();
+
+            _refreshTimer = new Timer(async _ =>
+            {
+                try
+                {
+                    await InvokeAsync(async () => await RenderChartAsync());
+                }
+                catch { }
+            }, null, TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(15));
+        }
+    }
+
+    private async Task OnTimeRangeChanged(ChangeEventArgs e)
+    {
+        _timeRange = int.Parse(e.Value?.ToString() ?? "24");
+        if (_rendered)
+            await RenderChartAsync();
+    }
+
+    private async Task OnTimeRangeChangedFullscreen(ChangeEventArgs e)
+    {
+        _timeRange = int.Parse(e.Value?.ToString() ?? "24");
+        if (_rendered)
+            await RenderChartAsync();
+    }
+
+    private async Task OpenFullscreen()
+    {
+        _showFullscreen = true;
+        StateHasChanged();
+        await Task.Delay(100);
+        await RenderChartAsync();
+    }
+
+    private async Task CloseFullscreen()
+    {
+        _showFullscreen = false;
+        await JS.InvokeVoidAsync("chartInterop.destroy", _fullscreenCanvasId);
+        // Re-render the inline chart
+        await Task.Delay(100);
+        await RenderChartAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_rendered)
+            await RenderChartAsync();
+    }
+
+    private async Task RenderChartAsync()
+    {
+        var now = DateTime.UtcNow;
+        var nowLocal = DateTime.Now;
+
+        // Determine time range and bucket size
+        DateTime start;
+        DateTime end;
+        int bucketMinutes;
+        bool isRelative = _timeRange < 24;
+
+        if (isRelative)
+        {
+            // Relative: past N hours from now
+            end = now;
+            start = now.AddHours(-_timeRange);
+            bucketMinutes = _timeRange switch
+            {
+                1 => 5,    // 5-minute buckets for 1 hour
+                3 => 10,   // 10-minute buckets for 3 hours
+                6 => 15,   // 15-minute buckets for 6 hours
+                12 => 30,  // 30-minute buckets for 12 hours
+                _ => 60
+            };
+        }
+        else
+        {
+            // Full day view
+            var date = Date ?? DateOnly.FromDateTime(DateTime.Today);
+            start = date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+            end = date == DateOnly.FromDateTime(DateTime.Today) ? now : start.AddDays(1);
+            bucketMinutes = 60;
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        var allDevices = await db.Devices
+            .Where(d => !d.IsExcluded)
+            .ToListAsync();
+        var macToName = allDevices.ToDictionary(d => d.MacAddress, d => d.DisplayName);
+
+        var query = db.DnsQueryLogs
+            .Where(q => q.Timestamp >= start && q.Timestamp < end);
+
+        if (FlaggedOnly)
+            query = query.Where(q => q.IsFlagged);
+
+        if (!string.IsNullOrEmpty(DeviceFilter))
+            query = query.Where(q => q.MacAddress == DeviceFilter);
+
+        var logs = await query
+            .Select(q => new { q.Timestamp, q.MacAddress, q.Domain })
+            .ToListAsync();
+
+        // Build time buckets
+        var bucketCount = (int)Math.Ceiling((end - start).TotalMinutes / bucketMinutes);
+        if (bucketCount <= 0) bucketCount = 1;
+
+        int GetBucket(DateTime ts)
+        {
+            var localTs = ts.ToLocalTime();
+            var localStart = start.ToLocalTime();
+            var idx = (int)((localTs - localStart).TotalMinutes / bucketMinutes);
+            return Math.Clamp(idx, 0, bucketCount - 1);
+        }
+
+        // Group by bucket and device
+        var grouped = logs
+            .GroupBy(l => new { Bucket = GetBucket(l.Timestamp), l.MacAddress })
+            .Select(g => new { g.Key.Bucket, g.Key.MacAddress, Count = g.Count() })
+            .ToList();
+
+        // Determine which devices to show
+        List<string> devicesToShow;
+        if (!string.IsNullOrEmpty(DeviceFilter))
+        {
+            devicesToShow = new List<string> { DeviceFilter };
+        }
+        else
+        {
+            var deviceTotals = grouped
+                .GroupBy(g => g.MacAddress)
+                .ToDictionary(g => g.Key, g => g.Sum(x => x.Count));
+
+            var threshold = FlaggedOnly ? 1 : MinRequests;
+            devicesToShow = allDevices
+                .Where(d => deviceTotals.GetValueOrDefault(d.MacAddress, 0) >= threshold)
+                .Select(d => d.MacAddress)
+                .OrderBy(m => macToName.GetValueOrDefault(m, m))
+                .ToList();
+        }
+
+        var colors = new[]
+        {
+            "#7aa2f7", "#f7768e", "#9ece6a", "#e0af68", "#bb9af7",
+            "#7dcfff", "#ff9e64", "#c0caf5", "#73daca", "#db4b4b",
+            "#2ac3de", "#b4f9f8", "#ff7a93", "#0db9d7", "#449dab"
+        };
+
+        var datasets = new List<object>();
+        for (var i = 0; i < devicesToShow.Count; i++)
+        {
+            var mac = devicesToShow[i];
+            var rawData = new int[bucketCount];
+            foreach (var g in grouped.Where(g => g.MacAddress == mac))
+                rawData[g.Bucket] = g.Count;
+
+            // Show low points only if adjacent to a significant point
+            // Flagged mode: show everything (threshold 1)
+            var minThreshold = FlaggedOnly ? 1 : (isRelative ? 1 : MinRequests);
+            var data = new int?[bucketCount];
+            for (var b = 0; b < bucketCount; b++)
+            {
+                if (rawData[b] >= minThreshold)
+                {
+                    data[b] = rawData[b];
+                }
+                else
+                {
+                    var prevSig = b > 0 && rawData[b - 1] >= minThreshold;
+                    var nextSig = b < bucketCount - 1 && rawData[b + 1] >= minThreshold;
+                    data[b] = (prevSig || nextSig) ? rawData[b] : null;
+                }
+            }
+
+            var color = colors[i % colors.Length];
+            datasets.Add(new
+            {
+                label = macToName.GetValueOrDefault(mac, mac),
+                data,
+                borderColor = color,
+                backgroundColor = color + "33",
+                fill = false,
+                tension = 0.3,
+                pointRadius = 3,
+                pointHoverRadius = 6,
+                borderWidth = 2,
+                spanGaps = false
+            });
+        }
+
+        // Build labels
+        var labels = new string[bucketCount];
+        var startLocal = start.ToLocalTime();
+        for (var b = 0; b < bucketCount; b++)
+        {
+            var bucketTime = startLocal.AddMinutes(b * bucketMinutes);
+            labels[b] = bucketMinutes >= 60
+                ? $"{bucketTime:HH:mm}"
+                : $"{bucketTime:HH:mm}";
+        }
+
+        var config = new
+        {
+            type = "line",
+            data = new { labels, datasets },
+            options = new
+            {
+                responsive = true,
+                maintainAspectRatio = false,
+                interaction = new { mode = "nearest", intersect = true },
+                plugins = new
+                {
+                    legend = new
+                    {
+                        position = "bottom",
+                        labels = new { color = "#999", boxWidth = 12, padding = 15, usePointStyle = true }
+                    },
+                    tooltip = new { mode = "nearest", intersect = true }
+                },
+                scales = new
+                {
+                    x = new
+                    {
+                        ticks = new { color = "#777", maxTicksLimit = 12 },
+                        grid = new { color = "rgba(255,255,255,0.05)" }
+                    },
+                    y = new
+                    {
+                        ticks = new { color = "#777", precision = 0, stepSize = 10 },
+                        grid = new { color = "rgba(255,255,255,0.05)" },
+                        beginAtZero = true
+                    }
+                }
+            }
+        };
+
+        // Build top 3 domains per device per bucket
+        var topDomains = new Dictionary<string, object[]>();
+        var domainGroups = logs
+            .GroupBy(l => new
+            {
+                DeviceName = macToName.GetValueOrDefault(l.MacAddress, l.MacAddress),
+                Bucket = GetBucket(l.Timestamp)
+            });
+
+        foreach (var group in domainGroups)
+        {
+            var key = $"{group.Key.DeviceName}|{group.Key.Bucket}";
+            var top = group
+                .GroupBy(l => l.Domain)
+                .Select(g => new { domain = g.Key, count = g.Count() })
+                .OrderByDescending(g => g.count)
+                .Take(3)
+                .ToArray();
+            topDomains[key] = top;
+        }
+
+        await JS.InvokeVoidAsync("chartInterop.createOrUpdate", _canvasId, config, topDomains);
+
+        if (_showFullscreen)
+        {
+            // Small delay to ensure the modal DOM is rendered
+            await Task.Delay(50);
+            await JS.InvokeVoidAsync("chartInterop.createOrUpdate", _fullscreenCanvasId, config, topDomains);
+        }
+    }
+
+    public void Dispose()
+    {
+        _refreshTimer?.Dispose();
+        _ = JS.InvokeVoidAsync("chartInterop.destroy", _canvasId);
+        _ = JS.InvokeVoidAsync("chartInterop.destroy", _fullscreenCanvasId);
+    }
+}

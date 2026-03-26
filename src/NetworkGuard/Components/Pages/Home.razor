@@ -1,0 +1,227 @@
+@page "/"
+@rendermode InteractiveServer
+@inject IDnsProxyService DnsProxy
+@inject IAlertService AlertService
+@inject IDbContextFactory<AppDbContext> DbFactory
+@implements IDisposable
+
+<PageTitle>NetworkGuard - Dashboard</PageTitle>
+
+<h2 class="mb-4">Dashboard</h2>
+
+<!-- Status Cards -->
+<div class="row g-4 mb-4">
+    <div class="col-6 col-md-3">
+        <div class="card @(DnsProxy.IsRunning ? "border-success" : "border-danger")">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <i class="bi @(DnsProxy.IsRunning ? "bi-check-circle-fill text-success" : "bi-x-circle-fill text-danger") fs-2 me-3"></i>
+                    <div>
+                        <h6 class="card-subtitle text-muted">DNS Proxy</h6>
+                        <h4 class="card-title mb-0">@(DnsProxy.IsRunning ? "Running" : "Stopped")</h4>
+                        @if (DnsProxy.StartedAt.HasValue)
+                        {
+                            <small class="text-muted">Since @DnsProxy.StartedAt.Value.ToLocalTime().ToString("g")</small>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-globe fs-2 me-3 text-primary"></i>
+                    <div>
+                        <h6 class="card-subtitle text-muted">Total Queries</h6>
+                        <h4 class="card-title mb-0">@DnsProxy.TotalQueries.ToString("N0")</h4>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-exclamation-triangle-fill fs-2 me-3 text-warning"></i>
+                    <div>
+                        <h6 class="card-subtitle text-muted">Flagged Queries</h6>
+                        <h4 class="card-title mb-0">@DnsProxy.FlaggedQueries.ToString("N0")</h4>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-bell-fill fs-2 me-3 text-danger"></i>
+                    <div>
+                        <h6 class="card-subtitle text-muted">Unread Alerts</h6>
+                        <h4 class="card-title mb-0">@_unreadAlerts</h4>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Device Count -->
+<div class="row g-4 mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-laptop fs-2 me-3 text-info"></i>
+                    <div>
+                        <h6 class="card-subtitle text-muted">Devices Seen</h6>
+                        <h4 class="card-title mb-0">@_deviceCount</h4>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-flag-fill fs-2 me-3 text-warning"></i>
+                    <div>
+                        <h6 class="card-subtitle text-muted">Flagged Today</h6>
+                        <h4 class="card-title mb-0">@_flaggedToday</h4>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Activity Charts -->
+<div class="row g-4 mb-4">
+    <div class="col-12 col-md-6">
+        <NetworkGuard.Components.Shared.ActivityChart Title="All Device Activity Today" Height="350" />
+    </div>
+    <div class="col-12 col-md-6">
+        <NetworkGuard.Components.Shared.ActivityChart Title="Flagged Activity Today" FlaggedOnly="true" Height="350" />
+    </div>
+</div>
+
+<!-- Recent Alerts -->
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">Recent Alerts</h5>
+        <a href="alerts" class="btn btn-sm btn-outline-primary">View All</a>
+    </div>
+    <div class="card-body p-0">
+        @if (_recentAlerts.Count == 0)
+        {
+            <div class="p-4 text-center text-muted">
+                <i class="bi bi-check-circle fs-1"></i>
+                <p class="mt-2">No alerts yet. All clear!</p>
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Time</th>
+                            <th>Device</th>
+                            <th>Domain</th>
+                            <th>Category</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var alert in _recentAlerts)
+                        {
+                            <tr class="@(!alert.IsRead ? "fw-bold" : "")">
+                                <td>@alert.Timestamp.ToLocalTime().ToString("g")</td>
+                                <td>@(alert.Device?.DisplayName ?? "Unknown")</td>
+                                <td><code>@alert.Domain</code></td>
+                                <td>
+                                    <span class="badge @GetCategoryBadgeClass(alert.Category)">@alert.Category</span>
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => DismissAlert(alert.Id)" title="Dismiss">
+                                        <i class="bi bi-x"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private int _unreadAlerts;
+    private int _deviceCount;
+    private int _flaggedToday;
+    private List<Alert> _recentAlerts = new();
+
+    private Timer? _refreshTimer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDataAsync();
+
+        _refreshTimer = new Timer(async _ =>
+        {
+            try
+            {
+                await InvokeAsync(async () =>
+                {
+                    await LoadDataAsync();
+                    StateHasChanged();
+                });
+            }
+            catch (Exception) { }
+        }, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+    }
+
+    private async Task LoadDataAsync()
+    {
+        _unreadAlerts = await AlertService.GetUnreadCountAsync();
+        _recentAlerts = await AlertService.GetRecentAlertsAsync(10);
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _deviceCount = await db.Devices.CountAsync();
+
+        var todayUtc = DateTime.UtcNow.Date;
+        _flaggedToday = await db.DnsQueryLogs
+            .Where(q => q.IsFlagged && q.Timestamp >= todayUtc)
+            .CountAsync();
+    }
+
+    private async Task DismissAlert(int alertId)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        await db.Alerts.Where(a => a.Id == alertId).ExecuteDeleteAsync();
+        await LoadDataAsync();
+    }
+
+    private static string GetCategoryBadgeClass(string category) => category.ToLowerInvariant() switch
+    {
+        "adult" => "bg-danger",
+        "gambling" => "bg-warning text-dark",
+        "hacking" => "bg-info",
+        "malware" => "bg-dark",
+        "drugs" => "bg-success",
+        "violence" => "bg-danger",
+        "vpn-proxy" => "bg-primary",
+        "dating" => "bg-pink",
+        _ => "bg-secondary"
+    };
+
+    public void Dispose()
+    {
+        _refreshTimer?.Dispose();
+    }
+}

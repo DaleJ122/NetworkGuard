@@ -1,0 +1,145 @@
+@page "/devices"
+@rendermode InteractiveServer
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject IDeviceResolverService DeviceResolver
+@implements IDisposable
+
+<PageTitle>NetworkGuard - Devices</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="mb-0">Devices</h2>
+    <button class="btn btn-outline-primary" @onclick="RefreshArp">
+        <i class="bi bi-arrow-clockwise"></i> Refresh ARP Table
+    </button>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Name</th>
+                        <th>IP Address</th>
+                        <th>MAC Address</th>
+                        <th>Last Seen</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (_devices.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="5" class="text-center text-muted p-4">
+                                No devices discovered yet. Devices will appear as they make DNS queries.
+                            </td>
+                        </tr>
+                    }
+                    @foreach (var device in _devices)
+                    {
+                        <tr style="cursor: pointer;" class="@(device.IsExcluded ? "text-muted" : "")"
+                            @onclick="() => ShowModal(device)">
+                            <td>
+                                <strong>@device.DisplayName</strong>
+                                @if (!string.IsNullOrWhiteSpace(device.HostName) && device.HostName != device.DisplayName)
+                                {
+                                    <br /><small class="text-muted">@device.HostName</small>
+                                }
+                            </td>
+                            <td>@device.IpAddress</td>
+                            <td><code>@device.MacAddress</code></td>
+                            <td>@device.LastSeen.ToLocalTime().ToString("g")</td>
+                            <td>
+                                @if (device.IsCurrentlyBlocked)
+                                {
+                                    <span class="badge bg-danger"><i class="bi bi-wifi-off"></i> Blocked
+                                        @if (device.BlockedUntil.HasValue)
+                                        {
+                                            <span>until @device.BlockedUntil.Value.ToLocalTime().ToString("HH:mm")</span>
+                                        }
+                                    </span>
+                                }
+                                else if (device.IsExcluded)
+                                {
+                                    <span class="badge bg-secondary">Excluded</span>
+                                }
+                                else if ((DateTime.UtcNow - device.LastSeen).TotalMinutes <= 5)
+                                {
+                                    <span class="badge bg-success"><i class="bi bi-wifi"></i> Online</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-secondary"><i class="bi bi-wifi-off"></i> Offline</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Device Modal -->
+<NetworkGuard.Components.Shared.DeviceModal
+    Device="@_modalDevice"
+    Visible="@(_modalDevice != null)"
+    OnClose="CloseModalCallback"
+    OnChanged="OnChangedCallback" />
+
+@code {
+    private List<Device> _devices = new();
+    private Device? _modalDevice;
+    private Timer? _refreshTimer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDevicesAsync();
+
+        _refreshTimer = new Timer(async _ =>
+        {
+            try
+            {
+                await InvokeAsync(async () =>
+                {
+                    await LoadDevicesAsync();
+                    StateHasChanged();
+                });
+            }
+            catch { }
+        }, null, TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(15));
+    }
+
+    public void Dispose()
+    {
+        _refreshTimer?.Dispose();
+    }
+
+    private async Task LoadDevicesAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _devices = await db.Devices.OrderByDescending(d => d.LastSeen).ToListAsync();
+    }
+
+    private void ShowModal(Device device)
+    {
+        _modalDevice = device;
+    }
+
+    private EventCallback CloseModalCallback => EventCallback.Factory.Create(this, () =>
+    {
+        _modalDevice = null;
+        StateHasChanged();
+    });
+
+    private EventCallback OnChangedCallback => EventCallback.Factory.Create(this, async () =>
+    {
+        await LoadDevicesAsync();
+    });
+
+    private async Task RefreshArp()
+    {
+        await DeviceResolver.RefreshArpTableAsync();
+        await LoadDevicesAsync();
+    }
+}

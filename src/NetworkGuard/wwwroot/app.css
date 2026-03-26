@@ -1,0 +1,359 @@
+html, body {
+    height: 100%;
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+body {
+    background-color: #1a1d21;
+    color: #e0e0e0;
+}
+
+/* Sidebar navigation */
+.sidebar {
+    background-color: #111318 !important;
+    border-right: 1px solid #2a2d35;
+}
+
+.sidebar .nav-link.active {
+    background-color: rgba(99, 132, 255, 0.2) !important;
+    border-radius: 0.375rem;
+    color: #7aa2f7 !important;
+}
+
+.sidebar .nav-link:hover {
+    background-color: rgba(255, 255, 255, 0.06);
+    border-radius: 0.375rem;
+}
+
+/* Cards */
+.card {
+    background-color: #21242b;
+    border: 1px solid #2a2d35;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    border-radius: 0.5rem;
+}
+
+.card-header {
+    background-color: #272b33 !important;
+    border-bottom: 1px solid #2a2d35;
+}
+
+/* Tables */
+.table {
+    --bs-table-bg: transparent;
+    --bs-table-hover-bg: rgba(255, 255, 255, 0.04);
+}
+
+.table-light {
+    --bs-table-bg: #272b33;
+    --bs-table-color: #e0e0e0;
+}
+
+.table-warning {
+    --bs-table-bg: rgba(255, 170, 50, 0.1);
+    --bs-table-color: #e0e0e0;
+}
+
+/* Code blocks in tables */
+td code {
+    font-size: 0.85rem;
+    word-break: break-all;
+    color: #7aa2f7;
+}
+
+/* Form controls dark override */
+.form-control, .form-select {
+    background-color: #2a2d35;
+    border-color: #3a3d45;
+    color: #e0e0e0;
+}
+
+.form-control:focus, .form-select:focus {
+    background-color: #2a2d35;
+    border-color: #7aa2f7;
+    color: #e0e0e0;
+    box-shadow: 0 0 0 0.2rem rgba(122, 162, 247, 0.25);
+}
+
+.form-control:disabled {
+    background-color: #1e2127;
+    color: #888;
+}
+
+/* Nav tabs */
+.nav-tabs {
+    border-bottom-color: #3a3d45;
+}
+
+.nav-tabs .nav-link {
+    color: #999;
+}
+
+.nav-tabs .nav-link.active {
+    background-color: #21242b;
+    border-color: #3a3d45 #3a3d45 #21242b;
+    color: #e0e0e0;
+}
+
+/* Custom badge for dating (pink) */
+.bg-pink {
+    background-color: #e91e8c !important;
+}
+
+/* Alerts */
+.alert-info {
+    background-color: rgba(122, 162, 247, 0.15);
+    border-color: rgba(122, 162, 247, 0.3);
+    color: #a0c4ff;
+}
+
+/* Text muted override */
+.text-muted {
+    color: #777 !important;
+}
+
+/* Validation */
+.valid.modified:not([type=checkbox]) {
+    outline: 1px solid #26b050;
+}
+
+.invalid {
+    outline: 1px solid #e50000;
+}
+
+.validation-message {
+    color: #e50000;
+}
+
+/* Blazor error boundary */
+.blazor-error-boundary {
+    background: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTYiIGhlaWdodD0iNDkiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgeG1sbnM6eGxpbms9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkveGxpbmsiIG92ZXJmbG93PSJoaWRkZW4iPjxkZWZzPjxjbGlwUGF0aCBpZD0iY2xpcDAiPjxyZWN0IHg9IjIzNSIgeT0iNTEiIHdpZHRoPSI1NiIgaGVpZ2h0PSI0OSIvPjwvY2xpcFBhdGg+PC9kZWZzPjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMCkiIHRyYW5zZm9ybT0idHJhbnNsYXRlKC0yMzUgLTUxKSI+PHBhdGggZD0iTTI2My41MDYgNTFDMjY0LjcxNyA1MSAyNjUuODEzIDUxLjQ4MzcgMjY2LjYwNiA1Mi4yNjU4TDI2Ny4wNTIgNTIuNzk4NyAyNjcuNTM5IDUzLjYyODMgMjkwLjE4NSA5Mi4xODMxIDI5MC41NDUgOTIuNzk1IDI5MC42NTYgOTIuOTk2QzI5MC44NzcgOTMuNTEzIDI5MSA5NC4wODE1IDI5MSA5NC42NzgyIDI5MSA5Ny4wNjUxIDI4OS4wMzggOTkgMjg2LjYxNyA5OUwyNDAuMzgzIDk5QzIzNy45NjMgOTkgMjM2IDk3LjA2NTEgMjM2IDk0LjY3ODIgMjM2IDk0LjM3OTkgMjM2LjAzMSA5NC4wODg2IDIzNi4wODkgOTMuODA3MkwyMzYuMzM4IDkzLjAxNjIgMjM2Ljg1OCA5Mi4xMzE0IDI1OS40NzMgNTMuNjI5NCAyNTkuOTYxIDUyLjc5ODUgMjYwLjQwNyA1Mi4yNjU4QzI2MS4yIDUxLjQ4MzcgMjYyLjI5NiA1MSAyNjMuNTA2IDUxWk0yNjMuNTg2IDY2LjAxODNDMjYwLjczNyA2Ni4wMTgzIDI1OS4zMTMgNjcuMTI0NSAyNTkuMzEzIDY5LjMzNyAyNTkuMzEzIDY5LjYxMDIgMjU5LjMzMiA2OS44NjA4IDI1OS4zNzEgNzAuMDg4N0wyNjEuNzk1IDg0LjAxNjEgMjY1LjM4IDg0LjAxNjEgMjY3LjgyMSA2OS43NDc1QzI2Ny44NiA2OS43MzA5IDI2Ny44NzkgNjkuNTg3NyAyNjcuODc5IDY5LjMxNzkgMjY3Ljg3OSA2Ny4xMTgyIDI2Ni40NDggNjYuMDE4MyAyNjMuNTg2IDY2LjAxODNaTTI2My41NzYgODYuMDU0N0MyNjEuMDQ5IDg2LjA1NDcgMjU5Ljc4NiA4Ny4zMDA1IDI1OS43ODYgODkuNzkyMSAyNTkuNzg2IDkyLjI4MzcgMjYxLjA0OSA5My41Mjk1IDI2My41NzYgOTMuNTI5NSAyNjYuMTE2IDkzLjUyOTUgMjY3LjM4NyA5Mi4yODM3IDI2Ny4zODcgODkuNzkyMSAyNjcuMzg3IDg3LjMwMDUgMjY2LjExNiA4Ni4wNTQ3IDI2My41NzYgODYuMDU0N1oiIGZpbGw9IiNGRkU1MDAiIGZpbGwtcnVsZT0iZXZlbm9kZCIvPjwvZz48L3N2Zz4=) no-repeat 1rem/1.8rem, #b32121;
+    padding: 1rem 1rem 1rem 3.7rem;
+    color: white;
+}
+
+.blazor-error-boundary::after {
+    content: "An error has occurred."
+}
+
+/* Blazor error UI */
+#blazor-error-ui {
+    background: #332b00;
+    bottom: 0;
+    box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.4);
+    display: none;
+    left: 0;
+    padding: 0.6rem 1.25rem 0.7rem 1.25rem;
+    position: fixed;
+    width: 100%;
+    z-index: 1000;
+    color: #ffd866;
+}
+
+#blazor-error-ui .dismiss {
+    cursor: pointer;
+    position: absolute;
+    right: 0.75rem;
+    top: 0.5rem;
+}
+
+/* ===== Mobile Top Bar ===== */
+.mobile-topbar {
+    display: none;
+}
+
+/* ===== Main content default padding ===== */
+.main-content {
+    padding: 1.5rem;
+}
+
+/* ===== Sidebar overlay (mobile) ===== */
+.sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 1040;
+}
+
+.sidebar-overlay.show {
+    display: block;
+}
+
+/* ===== Responsive: screens below 768px (Bootstrap md breakpoint) ===== */
+@media (max-width: 767.98px) {
+    /* Mobile top bar: fixed bar with hamburger */
+    .mobile-topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 56px;
+        background-color: #111318;
+        border-bottom: 1px solid #2a2d35;
+        padding: 0 1rem;
+        z-index: 1050;
+    }
+
+    /* Sidebar: off-canvas on mobile */
+    .sidebar {
+        position: fixed !important;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        z-index: 1060;
+        transform: translateX(-100%);
+        transition: transform 0.25s ease-in-out;
+        overflow-y: auto;
+    }
+
+    .sidebar.mobile-open {
+        transform: translateX(0);
+    }
+
+    /* Main content: add top padding for the fixed topbar */
+    .main-content {
+        padding: 1rem;
+        padding-top: calc(56px + 1rem);
+        max-height: 100vh;
+    }
+
+    /* Page headings: smaller on mobile */
+    h2 {
+        font-size: 1.4rem;
+    }
+
+    /* Modal dialogs: full-width on mobile */
+    .modal-dialog,
+    .modal-dialog.modal-lg {
+        max-width: 100%;
+        margin: 0.5rem;
+    }
+
+    /* Modal footer: stack buttons vertically on small screens */
+    .modal-footer {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .modal-footer > div {
+        width: 100%;
+    }
+
+    .modal-footer .d-flex.gap-2 {
+        flex-wrap: wrap;
+    }
+
+    /* Chart cards: reduced height on mobile */
+    .chart-container {
+        height: 220px !important;
+    }
+
+    /* Activity detail modal: blocklist add section stacks */
+    .modal-footer .d-flex.gap-2.align-items-center {
+        flex-wrap: wrap;
+    }
+
+    /* Nav tabs: horizontal scroll on mobile */
+    .nav-tabs {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .nav-tabs .nav-item {
+        flex-shrink: 0;
+    }
+
+    /* Device modal: action buttons stack */
+    .modal-body .d-flex.gap-3 {
+        flex-direction: column;
+        gap: 1rem !important;
+    }
+
+    .modal-body .d-flex.gap-3 .ms-auto {
+        margin-left: 0 !important;
+    }
+
+    /* Device info grid in modal: stack on mobile */
+    .modal-body .row.g-3 .col-md-2,
+    .modal-body .row.g-3 .col-md-3,
+    .modal-body .row.g-3 .col-md-4 {
+        min-width: 50%;
+    }
+
+    /* Fullscreen chart modal on mobile */
+    .modal-dialog[style*="max-width: 1800px"] {
+        max-width: 100% !important;
+        margin: 0 !important;
+    }
+
+    .modal-dialog[style*="max-width: 1800px"] .modal-body[style*="calc(100vh - 150px)"] {
+        height: calc(100vh - 120px) !important;
+    }
+
+    /* Card header: stack flex items if they overflow */
+    .card-header.d-flex {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    /* Pagination buttons in card header */
+    .card-header .d-flex.justify-content-between {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    /* Devices page header: keep title and button on same line but allow wrap */
+    .d-flex.justify-content-between.align-items-center.mb-4 {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+}
+
+/* ===== Small phones (below 480px) ===== */
+@media (max-width: 479.98px) {
+    .main-content {
+        padding: 0.75rem;
+        padding-top: calc(56px + 0.75rem);
+    }
+
+    h2 {
+        font-size: 1.25rem;
+    }
+
+    /* Status cards: smaller text */
+    .card-body h4 {
+        font-size: 1.1rem;
+    }
+
+    .card-body h6 {
+        font-size: 0.8rem;
+    }
+
+    /* Buttons: slightly smaller */
+    .btn {
+        font-size: 0.875rem;
+    }
+
+    /* Table font size */
+    .table {
+        font-size: 0.85rem;
+    }
+
+    /* Modal body padding */
+    .modal-body {
+        padding: 0.75rem;
+    }
+
+    /* Device info in modal: full width each item */
+    .modal-body .row.g-3 .col-md-2,
+    .modal-body .row.g-3 .col-md-3,
+    .modal-body .row.g-3 .col-md-4 {
+        min-width: 100%;
+    }
+}

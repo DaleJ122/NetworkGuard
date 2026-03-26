@@ -1,0 +1,354 @@
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject IJSRuntime JS
+
+@if (Visible && Device != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.6);" @onclick="Close">
+        <div class="modal-dialog modal-lg" @onclick:stopPropagation="true">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-laptop me-2"></i>@Device.DisplayName
+                        @if (Device.IsCurrentlyBlocked)
+                        {
+                            <span class="badge bg-danger ms-2"><i class="bi bi-wifi-off"></i> Blocked</span>
+                        }
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- Device Info -->
+                    <div class="row g-3 mb-4">
+                        <div class="col-6 col-md-3">
+                            <small class="text-muted d-block">IP Address</small>
+                            <strong>@Device.IpAddress</strong>
+                        </div>
+                        <div class="col-6 col-md-4">
+                            <small class="text-muted d-block">MAC Address</small>
+                            <code>@Device.MacAddress</code>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <small class="text-muted d-block">Detected Name</small>
+                            <span>@(Device.HostName ?? "—")</span>
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <small class="text-muted d-block">Last Seen</small>
+                            <span>@Device.LastSeen.ToLocalTime().ToString("HH:mm")</span>
+                        </div>
+                    </div>
+
+                    <!-- Rename -->
+                    <div class="mb-4">
+                        <label class="form-label">Friendly Name</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" @bind="_friendlyName"
+                                   placeholder="@(Device.HostName ?? Device.MacAddress)" />
+                            <button class="btn btn-primary" @onclick="SaveName">
+                                <i class="bi bi-check"></i> Save
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Actions Row -->
+                    <div class="d-flex flex-wrap gap-3 mb-4">
+                        <!-- Block/Unblock -->
+                        @if (Device.IsCurrentlyBlocked)
+                        {
+                            <div>
+                                <button class="btn btn-success" @onclick="Unblock">
+                                    <i class="bi bi-wifi"></i> Unblock Internet
+                                </button>
+                                @if (Device.BlockedUntil.HasValue)
+                                {
+                                    <small class="text-muted ms-2">Until @Device.BlockedUntil.Value.ToLocalTime().ToString("HH:mm")</small>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="d-flex gap-2 align-items-center">
+                                <select class="form-select form-select-sm" style="width: 130px;" @bind="_blockDuration">
+                                    <option value="30">30 min</option>
+                                    <option value="60">1 hour</option>
+                                    <option value="120">2 hours</option>
+                                    <option value="240">4 hours</option>
+                                    <option value="480">8 hours</option>
+                                    <option value="0">Indefinite</option>
+                                </select>
+                                <button class="btn btn-danger" @onclick="Block">
+                                    <i class="bi bi-wifi-off"></i> Block Internet
+                                </button>
+                            </div>
+                        }
+
+                        <!-- Exclude Toggle -->
+                        <div class="form-check form-switch d-flex align-items-center ms-auto">
+                            <input class="form-check-input me-2" type="checkbox" checked="@Device.IsExcluded"
+                                   @onchange="ToggleExcluded" id="modalExcluded" />
+                            <label class="form-check-label" for="modalExcluded">Exclude from monitoring</label>
+                        </div>
+                    </div>
+
+                    <!-- Top Domains Today -->
+                    <h6 class="mb-2">Top Domains Today</h6>
+                    <div class="table-responsive mb-4" style="max-height: 250px; overflow-y: auto;">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Domain</th>
+                                    <th>Requests</th>
+                                    <th>Category</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var domain in _topDomains)
+                                {
+                                    <tr class="@(domain.Category != null ? "table-warning" : "")">
+                                        <td><code>@domain.Domain</code></td>
+                                        <td><span class="badge bg-secondary">@domain.Count</span></td>
+                                        <td>
+                                            @if (domain.Category != null)
+                                            {
+                                                <span class="badge @GetCategoryBadgeClass(domain.Category)">@domain.Category</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                                @if (_topDomains.Count == 0)
+                                {
+                                    <tr><td colspan="3" class="text-center text-muted">No activity today</td></tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Recent Alerts -->
+                    @if (_recentAlerts.Count > 0)
+                    {
+                        <h6 class="mb-2"><i class="bi bi-exclamation-triangle text-warning me-1"></i>Recent Alerts</h6>
+                        <div class="table-responsive" style="max-height: 150px; overflow-y: auto;">
+                            <table class="table table-sm mb-0">
+                                <tbody>
+                                    @foreach (var alert in _recentAlerts)
+                                    {
+                                        <tr class="table-warning">
+                                            <td>@alert.Timestamp.ToLocalTime().ToString("g")</td>
+                                            <td><code>@alert.Domain</code></td>
+                                            <td><span class="badge @GetCategoryBadgeClass(alert.Category)">@alert.Category</span></td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+
+                    @if (_showTraceLog)
+                    {
+                        <h6 class="mb-2 mt-3">
+                            <i class="bi bi-terminal me-1"></i>Trace Log
+                            <button class="btn btn-sm btn-outline-secondary ms-2" @onclick="CopyTraceLog">
+                                <i class="bi bi-clipboard"></i> Copy
+                            </button>
+                            @if (_copied)
+                            {
+                                <span class="text-success ms-2"><i class="bi bi-check"></i> Copied</span>
+                            }
+                        </h6>
+                        <pre id="traceLogPre" class="p-3 rounded" style="background-color: #111318; color: #7aa2f7; max-height: 400px; overflow-y: auto; font-size: 0.8rem; white-space: pre-wrap; user-select: all;">@_traceLogText</pre>
+                    }
+                </div>
+                <div class="modal-footer d-flex justify-content-between">
+                    <button type="button" class="btn btn-outline-info" @onclick="ToggleTraceLog">
+                        <i class="bi bi-terminal"></i> @(_showTraceLog ? "Hide" : "Show") Trace Log
+                    </button>
+                    <button type="button" class="btn btn-secondary" @onclick="Close">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public Device? Device { get; set; }
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private string _friendlyName = "";
+    private int _blockDuration = 60;
+    private bool _showTraceLog;
+    private bool _copied;
+    private string _traceLogText = "";
+    private List<DomainSummary> _topDomains = new();
+    private List<Alert> _recentAlerts = new();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Visible && Device != null)
+        {
+            _friendlyName = Device.FriendlyName ?? "";
+            await LoadDeviceDataAsync();
+        }
+    }
+
+    private async Task LoadDeviceDataAsync()
+    {
+        if (Device == null) return;
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var todayUtc = DateTime.UtcNow.Date;
+
+        _topDomains = await db.DnsQueryLogs
+            .Where(q => q.MacAddress == Device.MacAddress && q.Timestamp >= todayUtc)
+            .GroupBy(q => new { q.Domain, q.Category })
+            .Select(g => new DomainSummary
+            {
+                Domain = g.Key.Domain,
+                Category = g.Key.Category,
+                Count = g.Count()
+            })
+            .OrderByDescending(d => d.Count)
+            .Take(15)
+            .ToListAsync();
+
+        _recentAlerts = await db.Alerts
+            .Where(a => a.DeviceId == Device.Id)
+            .OrderByDescending(a => a.Timestamp)
+            .Take(10)
+            .ToListAsync();
+    }
+
+    private async Task SaveName()
+    {
+        if (Device == null) return;
+        var nameToSave = string.IsNullOrWhiteSpace(_friendlyName) ? null : _friendlyName.Trim();
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        await db.Devices
+            .Where(d => d.Id == Device.Id)
+            .ExecuteUpdateAsync(s => s.SetProperty(d => d.FriendlyName, nameToSave));
+
+        Device.FriendlyName = nameToSave;
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task Block()
+    {
+        if (Device == null) return;
+        DateTime? blockedUntil = _blockDuration > 0 ? DateTime.UtcNow.AddMinutes(_blockDuration) : null;
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        await db.Devices
+            .Where(d => d.Id == Device.Id)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(d => d.IsBlocked, true)
+                .SetProperty(d => d.BlockedUntil, blockedUntil));
+
+        Device.IsBlocked = true;
+        Device.BlockedUntil = blockedUntil;
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task Unblock()
+    {
+        if (Device == null) return;
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        await db.Devices
+            .Where(d => d.Id == Device.Id)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(d => d.IsBlocked, false)
+                .SetProperty(d => d.BlockedUntil, (DateTime?)null));
+
+        Device.IsBlocked = false;
+        Device.BlockedUntil = null;
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task ToggleExcluded()
+    {
+        if (Device == null) return;
+        var newValue = !Device.IsExcluded;
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        await db.Devices
+            .Where(d => d.Id == Device.Id)
+            .ExecuteUpdateAsync(s => s.SetProperty(d => d.IsExcluded, newValue));
+
+        Device.IsExcluded = newValue;
+        await OnChanged.InvokeAsync();
+    }
+
+    private void Close()
+    {
+        _showTraceLog = false;
+        _copied = false;
+        _traceLogText = "";
+        OnClose.InvokeAsync();
+    }
+
+    private async Task ToggleTraceLog()
+    {
+        _showTraceLog = !_showTraceLog;
+        _copied = false;
+
+        if (_showTraceLog && Device != null)
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var todayUtc = DateTime.UtcNow.Date;
+
+            var logs = await db.DnsQueryLogs
+                .Where(q => q.MacAddress == Device.MacAddress && q.Timestamp >= todayUtc)
+                .OrderByDescending(q => q.Timestamp)
+                .Take(500)
+                .ToListAsync();
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"=== DNS Trace Log for {Device.DisplayName} ===");
+            sb.AppendLine($"Device: {Device.DisplayName} | MAC: {Device.MacAddress} | IP: {Device.IpAddress}");
+            sb.AppendLine($"Date: {DateTime.Now:yyyy-MM-dd} | Total queries: {logs.Count}");
+            sb.AppendLine(new string('-', 80));
+
+            foreach (var log in logs)
+            {
+                var flag = log.IsFlagged ? $" [FLAGGED: {log.Category}]" : "";
+                sb.AppendLine($"{log.Timestamp.ToLocalTime():HH:mm:ss}  {log.Domain}  ({log.QueryType}){flag}");
+            }
+
+            _traceLogText = sb.ToString();
+        }
+    }
+
+    private async Task CopyTraceLog()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("eval", $"var t=document.createElement('textarea');t.value=document.getElementById('traceLogPre').innerText;document.body.appendChild(t);t.select();document.execCommand('copy');document.body.removeChild(t);");
+            _copied = true;
+        }
+        catch
+        {
+            _copied = false;
+        }
+    }
+
+    private static string GetCategoryBadgeClass(string category) => category.ToLowerInvariant() switch
+    {
+        "adult" => "bg-danger",
+        "gambling" => "bg-warning text-dark",
+        "hacking" => "bg-info",
+        "malware" => "bg-dark",
+        "drugs" => "bg-success",
+        "violence" => "bg-danger",
+        "vpn-proxy" => "bg-primary",
+        "dating" => "bg-pink",
+        _ => "bg-secondary"
+    };
+
+    private class DomainSummary
+    {
+        public string Domain { get; set; } = "";
+        public string? Category { get; set; }
+        public int Count { get; set; }
+    }
+}

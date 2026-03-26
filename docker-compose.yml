@@ -1,0 +1,38 @@
+services:
+  networkguard:
+    build: .
+    container_name: networkguard
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - networkguard-data:/app/data
+      - ./src/NetworkGuard/blocklists:/app/blocklists
+      - ./dhcp-data:/app/dhcp:ro
+    environment:
+      - ASPNETCORE_URLS=http://+:8082
+      - Dns__ListenIp=0.0.0.0
+      - Dns__ListenPort=53
+      - Dns__UpstreamServer=8.8.8.8
+      - Dns__UpstreamPort=53
+      - Database__PruneAfterDays=30
+      - ConnectionStrings__Default=Data Source=/app/data/networkguard.db
+      - Dhcp__LeasesPath=/app/dhcp/dnsmasq.leases
+
+  dhcp:
+    image: alpine:latest
+    container_name: networkguard-dhcp
+    restart: unless-stopped
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - ./dnsmasq.conf:/etc/dnsmasq.conf:ro
+      - ./dhcp-data:/var/lib/misc
+    command: >
+      sh -c "apk add --no-cache dnsmasq && dnsmasq --no-daemon --log-facility=-"
+    logging:
+      options:
+        max-size: "10m"
+
+volumes:
+  networkguard-data:

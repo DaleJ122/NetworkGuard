@@ -1,0 +1,575 @@
+@page "/activity"
+@rendermode InteractiveServer
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject IAlertService AlertService
+@inject IDomainCategoryService CategoryService
+@implements IDisposable
+
+<PageTitle>NetworkGuard - Activity</PageTitle>
+
+<h2 class="mb-4">Activity Log</h2>
+
+<NetworkGuard.Components.Shared.ActivityChart
+    Title="Device Activity Today"
+    Date="@_selectedDate"
+    FlaggedOnly="@_flaggedOnly"
+    DeviceFilter="@_selectedDevice" />
+
+<!-- Filters -->
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-6 col-md-3">
+                <label class="form-label">Device</label>
+                <select class="form-select" value="@_selectedDevice" @onchange="OnDeviceChanged">
+                    <option value="">All Devices</option>
+                    @foreach (var device in _devices)
+                    {
+                        <option value="@device.MacAddress">@device.DisplayName</option>
+                    }
+                </select>
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label">Category</label>
+                <select class="form-select" value="@_selectedCategory" @onchange="OnCategoryChanged">
+                    <option value="">All Categories</option>
+                    <option value="adult">Adult</option>
+                    <option value="dating">Dating</option>
+                    <option value="drugs">Drugs</option>
+                    <option value="gambling">Gambling</option>
+                    <option value="hacking">Hacking</option>
+                    <option value="malware">Malware</option>
+                    <option value="violence">Violence</option>
+                    <option value="vpn-proxy">VPN/Proxy</option>
+                </select>
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label">Date</label>
+                <input type="date" class="form-control" value="@_selectedDate?.ToString("yyyy-MM-dd")" @onchange="OnDateChanged" />
+            </div>
+            <div class="col-6 col-md-2">
+                <div class="form-check form-switch mt-2">
+                    <input class="form-check-input" type="checkbox" checked="@_flaggedOnly" @onchange="OnFlaggedChanged" id="flaggedOnly" />
+                    <label class="form-check-label" for="flaggedOnly">Flagged only</label>
+                </div>
+            </div>
+            <div class="col-12 col-md-3">
+                <button class="btn btn-outline-secondary" @onclick="ClearFilters">
+                    <i class="bi bi-x-lg"></i> Clear Filters
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Results -->
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span>Showing @_grouped.Count grouped results (page @(_page + 1))</span>
+        <div>
+            <button class="btn btn-sm btn-outline-primary me-1" disabled="@(_page == 0)" @onclick="PreviousPage">
+                <i class="bi bi-chevron-left"></i> Previous
+            </button>
+            <button class="btn btn-sm btn-outline-primary" disabled="@(!_hasMore)" @onclick="NextPage">
+                Next <i class="bi bi-chevron-right"></i>
+            </button>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover table-sm mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Last Seen</th>
+                        <th>Device</th>
+                        <th>Domain</th>
+                        <th>Requests</th>
+                        <th>Category</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (_grouped.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="5" class="text-center text-muted p-4">No matching records found.</td>
+                        </tr>
+                    }
+                    @foreach (var group in _grouped)
+                    {
+                        <tr class="@(group.IsFlagged ? "table-warning" : "")"
+                            style="cursor: pointer;" @onclick="() => ShowDetail(group)">
+                            <td>@group.LastSeen.ToLocalTime().ToString("HH:mm:ss")</td>
+                            <td @onclick:stopPropagation="true">
+                                <a href="javascript:void(0)" class="text-decoration-none"
+                                   @onclick="() => ShowDeviceModal(group.MacAddress)">
+                                    @(_macToName.GetValueOrDefault(group.MacAddress, group.DeviceName))
+                                </a>
+                            </td>
+                            <td><code>@group.Domain</code></td>
+                            <td>
+                                <span class="badge bg-secondary">@group.Count</span>
+                            </td>
+                            <td>
+                                @if (group.Category != null)
+                                {
+                                    <span class="badge @GetCategoryBadgeClass(group.Category)">@group.Category</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Device Modal -->
+<NetworkGuard.Components.Shared.DeviceModal
+    Device="@_modalDevice"
+    Visible="@(_modalDevice != null)"
+    OnClose="CloseDeviceModalCallback"
+    OnChanged="OnDeviceChangedCallback" />
+
+<!-- Detail Modal -->
+@if (_selectedGroup != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.6);" @onclick="CloseDetail">
+        <div class="modal-dialog modal-lg" @onclick:stopPropagation="true">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <code>@_selectedGroup.Domain</code>
+                        @if (_selectedGroup.Category != null)
+                        {
+                            <span class="badge @GetCategoryBadgeClass(_selectedGroup.Category) ms-2">@_selectedGroup.Category</span>
+                        }
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="CloseDetail"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted mb-3">
+                        <strong>Device:</strong> @(_macToName.GetValueOrDefault(_selectedGroup.MacAddress, _selectedGroup.DeviceName))
+                        <span class="ms-3"><strong>Total requests:</strong> @_selectedGroup.Count</span>
+                    </p>
+                    @if (_detailAlerts != null && _detailAlerts.Count > 0)
+                    {
+                        <h6 class="mb-2"><i class="bi bi-exclamation-triangle text-warning me-1"></i>Alerts</h6>
+                        <div class="table-responsive mb-3" style="max-height: 150px; overflow-y: auto;">
+                            <table class="table table-sm mb-0">
+                                <tbody>
+                                    @foreach (var alert in _detailAlerts)
+                                    {
+                                        <tr class="table-warning">
+                                            <td>@alert.Timestamp.ToLocalTime().ToString("HH:mm:ss")</td>
+                                            <td><span class="badge @GetCategoryBadgeClass(alert.Category)">@alert.Category</span></td>
+                                            <td class="text-end">
+                                                <button class="btn btn-sm btn-outline-danger" @onclick="() => DismissSingleAlert(alert.Id)" title="Dismiss">
+                                                    <i class="bi bi-x"></i>
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+
+                    <h6 class="mb-2">Request Times</h6>
+                    <div style="max-height: 250px; overflow-y: auto;">
+                        <table class="table table-sm mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Type</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @if (_detailLogs != null)
+                                {
+                                    @foreach (var log in _detailLogs)
+                                    {
+                                        <tr>
+                                            <td>@log.Timestamp.ToLocalTime().ToString("HH:mm:ss")</td>
+                                            <td><small class="text-muted">@log.QueryType</small></td>
+                                        </tr>
+                                    }
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer d-flex flex-wrap justify-content-between gap-2">
+                    <div>
+                        @if (_selectedGroup.Category == null)
+                        {
+                            @if (!_showAddToBlocklist)
+                            {
+                                <button type="button" class="btn btn-warning" @onclick="() => _showAddToBlocklist = true">
+                                    <i class="bi bi-shield-plus"></i> Add to Blocklist
+                                </button>
+                            }
+                            else
+                            {
+                                <div class="d-flex flex-wrap gap-2 align-items-center">
+                                    <select class="form-select form-select-sm" style="width: 150px; min-width: 120px;" @bind="_addCategory">
+                                        <option value="">Select category...</option>
+                                        @foreach (var cat in CategoryService.GetCategories())
+                                        {
+                                            <option value="@cat">@cat</option>
+                                        }
+                                    </select>
+                                    <span class="text-muted">or</span>
+                                    <input type="text" class="form-control form-control-sm" style="width: 150px; min-width: 120px;"
+                                           placeholder="New category" @bind="_newCategory" />
+                                    <button type="button" class="btn btn-sm btn-success"
+                                            disabled="@(string.IsNullOrWhiteSpace(_addCategory) && string.IsNullOrWhiteSpace(_newCategory))"
+                                            @onclick="AddToBlocklist">
+                                        <i class="bi bi-check"></i> Add
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => _showAddToBlocklist = false">
+                                        Cancel
+                                    </button>
+                                </div>
+                            }
+                        }
+                        else
+                        {
+                            <span class="text-muted"><i class="bi bi-shield-check"></i> Already in blocklist: <span class="badge @GetCategoryBadgeClass(_selectedGroup.Category)">@_selectedGroup.Category</span></span>
+                        }
+                    </div>
+                    <div class="d-flex flex-wrap gap-2">
+                        @if (!_isIgnored)
+                        {
+                            <button type="button" class="btn btn-outline-danger" @onclick="IgnoreDomain"
+                                    title="Stop logging this domain for this device">
+                                <i class="bi bi-eye-slash"></i> Ignore for this device
+                            </button>
+                        }
+                        else
+                        {
+                            <button type="button" class="btn btn-outline-success" @onclick="UnignoreDomain">
+                                <i class="bi bi-eye"></i> Unignore
+                            </button>
+                        }
+                        <button type="button" class="btn btn-secondary" @onclick="CloseDetail">Close</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private const int PageSize = 50;
+    private List<Device> _devices = new();
+    private Dictionary<string, string> _macToName = new();
+    private List<GroupedLog> _grouped = new();
+    private List<DnsQueryLog>? _detailLogs;
+    private List<Alert>? _detailAlerts;
+    private GroupedLog? _selectedGroup;
+    private Device? _modalDevice;
+    private bool _showAddToBlocklist;
+    private bool _isIgnored;
+    private string _addCategory = "";
+    private string _newCategory = "";
+    private string _selectedDevice = "";
+    private string _selectedCategory = "";
+    private DateOnly? _selectedDate;
+    private bool _flaggedOnly;
+    private bool _hasMore;
+    private int _page;
+
+    private Timer? _refreshTimer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _selectedDate = DateOnly.FromDateTime(DateTime.Today);
+        await LoadDevicesAsync();
+        await LoadDataAsync();
+
+        // Auto-refresh every 5 seconds
+        _refreshTimer = new Timer(async _ =>
+        {
+            try
+            {
+                await InvokeAsync(async () =>
+                {
+                    await LoadDataAsync();
+                    StateHasChanged();
+                });
+            }
+            catch (Exception)
+            {
+            }
+        }, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+    }
+
+    public void Dispose()
+    {
+        _refreshTimer?.Dispose();
+    }
+
+    private async Task LoadDevicesAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _devices = await db.Devices.Where(d => !d.IsExcluded).OrderBy(d => d.FriendlyName ?? d.HostName ?? d.MacAddress).ToListAsync();
+        _macToName = _devices.ToDictionary(
+            d => d.MacAddress,
+            d => d.DisplayName);
+    }
+
+    private async Task LoadDataAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        // Get excluded device MACs to filter out
+        var excludedMacs = await db.Devices
+            .Where(d => d.IsExcluded)
+            .Select(d => d.MacAddress)
+            .ToListAsync();
+
+        var query = db.DnsQueryLogs
+            .Where(q => !excludedMacs.Contains(q.MacAddress));
+
+        if (_flaggedOnly)
+            query = query.Where(q => q.IsFlagged);
+
+        if (!string.IsNullOrEmpty(_selectedDevice))
+            query = query.Where(q => q.MacAddress == _selectedDevice);
+
+        if (!string.IsNullOrEmpty(_selectedCategory))
+            query = query.Where(q => q.Category == _selectedCategory);
+
+        if (_selectedDate.HasValue)
+        {
+            var start = _selectedDate.Value.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+            var end = start.AddDays(1);
+            query = query.Where(q => q.Timestamp >= start && q.Timestamp < end);
+        }
+
+        // Fetch raw logs then group in memory (SQLite doesn't support complex grouping)
+        var rawLogs = await query
+            .OrderByDescending(q => q.Timestamp)
+            .Take(5000) // reasonable limit for in-memory grouping
+            .ToListAsync();
+
+        var allGrouped = rawLogs
+            .GroupBy(l => new { l.MacAddress, l.Domain })
+            .Select(g => new GroupedLog
+            {
+                MacAddress = g.Key.MacAddress,
+                Domain = g.Key.Domain,
+                DeviceName = g.First().DeviceName,
+                Category = g.First().Category,
+                IsFlagged = g.Any(l => l.IsFlagged),
+                Count = g.Count(),
+                FirstSeen = g.Min(l => l.Timestamp),
+                LastSeen = g.Max(l => l.Timestamp)
+            })
+            .OrderByDescending(g => g.LastSeen)
+            .ToList();
+
+        _hasMore = allGrouped.Count > (_page + 1) * PageSize;
+        _grouped = allGrouped
+            .Skip(_page * PageSize)
+            .Take(PageSize)
+            .ToList();
+    }
+
+    private async Task ShowDetail(GroupedLog group)
+    {
+        _selectedGroup = group;
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var query = db.DnsQueryLogs
+            .Where(l => l.MacAddress == group.MacAddress && l.Domain == group.Domain);
+
+        if (_selectedDate.HasValue)
+        {
+            var start = _selectedDate.Value.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+            var end = start.AddDays(1);
+            query = query.Where(q => q.Timestamp >= start && q.Timestamp < end);
+        }
+
+        _detailLogs = await query
+            .OrderByDescending(l => l.Timestamp)
+            .Take(500)
+            .ToListAsync();
+
+        _isIgnored = await db.IgnoredDomains
+            .AnyAsync(i => i.MacAddress == group.MacAddress && i.Domain == group.Domain);
+
+        // Load alerts for this device+domain
+        var deviceIds = await db.Devices
+            .Where(d => d.MacAddress == group.MacAddress)
+            .Select(d => d.Id)
+            .ToListAsync();
+
+        _detailAlerts = await db.Alerts
+            .Where(a => deviceIds.Contains(a.DeviceId) && a.Domain == group.Domain)
+            .OrderByDescending(a => a.Timestamp)
+            .Take(20)
+            .ToListAsync();
+    }
+
+    private async Task IgnoreDomain()
+    {
+        if (_selectedGroup == null) return;
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var exists = await db.IgnoredDomains
+            .AnyAsync(i => i.MacAddress == _selectedGroup.MacAddress && i.Domain == _selectedGroup.Domain);
+
+        if (!exists)
+        {
+            db.IgnoredDomains.Add(new IgnoredDomain
+            {
+                MacAddress = _selectedGroup.MacAddress,
+                Domain = _selectedGroup.Domain,
+                CreatedAt = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+        }
+
+        _isIgnored = true;
+    }
+
+    private async Task UnignoreDomain()
+    {
+        if (_selectedGroup == null) return;
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        await db.IgnoredDomains
+            .Where(i => i.MacAddress == _selectedGroup.MacAddress && i.Domain == _selectedGroup.Domain)
+            .ExecuteDeleteAsync();
+
+        _isIgnored = false;
+    }
+
+    private void CloseDetail()
+    {
+        _selectedGroup = null;
+        _detailLogs = null;
+        _detailAlerts = null;
+        _showAddToBlocklist = false;
+        _isIgnored = false;
+        _addCategory = "";
+        _newCategory = "";
+    }
+
+    private async Task ShowDeviceModal(string macAddress)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _modalDevice = await db.Devices.FirstOrDefaultAsync(d => d.MacAddress == macAddress);
+    }
+
+    private EventCallback CloseDeviceModalCallback => EventCallback.Factory.Create(this, () => { _modalDevice = null; StateHasChanged(); });
+    private EventCallback OnDeviceChangedCallback => EventCallback.Factory.Create(this, async () => { await LoadDevicesAsync(); await LoadDataAsync(); });
+
+    private async Task DismissSingleAlert(int alertId)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        await db.Alerts.Where(a => a.Id == alertId).ExecuteDeleteAsync();
+        _detailAlerts?.RemoveAll(a => a.Id == alertId);
+    }
+
+    private async Task AddToBlocklist()
+    {
+        if (_selectedGroup == null) return;
+
+        var category = !string.IsNullOrWhiteSpace(_newCategory)
+            ? _newCategory.Trim()
+            : _addCategory;
+
+        if (string.IsNullOrWhiteSpace(category)) return;
+
+        // Create category if it's new
+        if (!CategoryService.GetCategories().Contains(category.ToLowerInvariant()))
+            await CategoryService.CreateCategoryAsync(category);
+
+        await CategoryService.AddDomainAsync(_selectedGroup.Domain, category);
+
+        _selectedGroup.Category = category.ToLowerInvariant();
+        _selectedGroup.IsFlagged = true;
+        _showAddToBlocklist = false;
+        _addCategory = "";
+        _newCategory = "";
+
+        await LoadDataAsync();
+    }
+
+    private async Task OnDeviceChanged(ChangeEventArgs e)
+    {
+        _selectedDevice = e.Value?.ToString() ?? "";
+        _page = 0;
+        await LoadDataAsync();
+    }
+
+    private async Task OnCategoryChanged(ChangeEventArgs e)
+    {
+        _selectedCategory = e.Value?.ToString() ?? "";
+        _page = 0;
+        await LoadDataAsync();
+    }
+
+    private async Task OnDateChanged(ChangeEventArgs e)
+    {
+        _selectedDate = DateOnly.TryParse(e.Value?.ToString(), out var d) ? d : null;
+        _page = 0;
+        await LoadDataAsync();
+    }
+
+    private async Task OnFlaggedChanged(ChangeEventArgs e)
+    {
+        _flaggedOnly = (bool)(e.Value ?? false);
+        _page = 0;
+        await LoadDataAsync();
+    }
+
+    private async Task NextPage()
+    {
+        _page++;
+        await LoadDataAsync();
+    }
+
+    private async Task PreviousPage()
+    {
+        if (_page > 0) _page--;
+        await LoadDataAsync();
+    }
+
+    private async Task ClearFilters()
+    {
+        _selectedDevice = "";
+        _selectedCategory = "";
+        _selectedDate = DateOnly.FromDateTime(DateTime.Today);
+        _flaggedOnly = false;
+        _page = 0;
+        await LoadDataAsync();
+    }
+
+    private static string GetCategoryBadgeClass(string category) => category.ToLowerInvariant() switch
+    {
+        "adult" => "bg-danger",
+        "gambling" => "bg-warning text-dark",
+        "hacking" => "bg-info",
+        "malware" => "bg-dark",
+        "drugs" => "bg-success",
+        "violence" => "bg-danger",
+        "vpn-proxy" => "bg-primary",
+        "dating" => "bg-pink",
+        _ => "bg-secondary"
+    };
+
+    private class GroupedLog
+    {
+        public string MacAddress { get; set; } = "";
+        public string Domain { get; set; } = "";
+        public string DeviceName { get; set; } = "";
+        public string? Category { get; set; }
+        public bool IsFlagged { get; set; }
+        public int Count { get; set; }
+        public DateTime FirstSeen { get; set; }
+        public DateTime LastSeen { get; set; }
+    }
+}

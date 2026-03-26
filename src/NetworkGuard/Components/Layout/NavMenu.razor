@@ -1,0 +1,70 @@
+@inject IAlertService AlertService
+@implements IDisposable
+
+<div class="sidebar d-flex flex-column flex-shrink-0 p-3 text-white bg-dark" style="width: 250px; min-height: 100vh;">
+    <a href="/" class="d-flex align-items-center mb-3 text-white text-decoration-none">
+        <i class="bi bi-shield-check me-2 fs-4"></i>
+        <span class="fs-4 fw-bold">NetworkGuard</span>
+    </a>
+    <hr />
+    <ul class="nav nav-pills flex-column mb-auto">
+        <li class="nav-item">
+            <NavLink class="nav-link text-white" href="" Match="NavLinkMatch.All" onclick="sidebarToggle.close()">
+                <i class="bi bi-speedometer2 me-2"></i> Dashboard
+            </NavLink>
+        </li>
+        <li class="nav-item">
+            <NavLink class="nav-link text-white" href="activity" onclick="sidebarToggle.close()">
+                <i class="bi bi-list-ul me-2"></i> Activity
+            </NavLink>
+        </li>
+        <li class="nav-item">
+            <NavLink class="nav-link text-white" href="devices" onclick="sidebarToggle.close()">
+                <i class="bi bi-laptop me-2"></i> Devices
+            </NavLink>
+        </li>
+        <li class="nav-item">
+            <NavLink class="nav-link text-white" href="alerts" onclick="sidebarToggle.close()">
+                <i class="bi bi-bell me-2"></i> Alerts
+                @if (_unreadCount > 0)
+                {
+                    <span class="badge bg-danger ms-2">@_unreadCount</span>
+                }
+            </NavLink>
+        </li>
+        <li class="nav-item">
+            <NavLink class="nav-link text-white" href="settings" onclick="sidebarToggle.close()">
+                <i class="bi bi-gear me-2"></i> Settings
+            </NavLink>
+        </li>
+    </ul>
+</div>
+
+@code {
+    private int _unreadCount;
+
+    private Timer? _refreshTimer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _unreadCount = await AlertService.GetUnreadCountAsync();
+
+        _refreshTimer = new Timer(async _ =>
+        {
+            try
+            {
+                await InvokeAsync(async () =>
+                {
+                    _unreadCount = await AlertService.GetUnreadCountAsync();
+                    StateHasChanged();
+                });
+            }
+            catch (Exception) { }
+        }, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+    }
+
+    public void Dispose()
+    {
+        _refreshTimer?.Dispose();
+    }
+}

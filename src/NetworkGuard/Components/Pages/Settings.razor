@@ -1,0 +1,294 @@
+@page "/settings"
+@rendermode InteractiveServer
+@inject IConfiguration Config
+@inject IDomainCategoryService CategoryService
+@inject IDbContextFactory<AppDbContext> DbFactory
+
+<PageTitle>NetworkGuard - Settings</PageTitle>
+
+<h2 class="mb-4">Settings</h2>
+
+<!-- Blocklists -->
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-list-check me-2"></i>Blocklists</h5>
+        <button class="btn btn-sm btn-outline-primary" @onclick="ReloadBlocklists">
+            <i class="bi bi-arrow-clockwise"></i> Reload from Files
+        </button>
+    </div>
+    <div class="card-body">
+        @if (_blocklistMessage != null)
+        {
+            <div class="alert alert-info alert-dismissible mb-3">
+                @_blocklistMessage
+                <button type="button" class="btn-close" @onclick="() => _blocklistMessage = null"></button>
+            </div>
+        }
+
+        <!-- Add Domain -->
+        <div class="row g-2 mb-3">
+            <div class="col-12 col-md-5">
+                <input type="text" class="form-control" placeholder="Domain (e.g. example.com)"
+                       @bind="_newDomain" @onkeydown="@(async e => { if (e.Key == "Enter") await AddDomain(); })" />
+            </div>
+            <div class="col-8 col-md-3">
+                <select class="form-select" @bind="_newDomainCategory">
+                    <option value="">Select category...</option>
+                    @foreach (var cat in CategoryService.GetCategories())
+                    {
+                        <option value="@cat">@cat</option>
+                    }
+                </select>
+            </div>
+            <div class="col-4 col-md-2">
+                <button class="btn btn-primary w-100" @onclick="AddDomain" disabled="@(string.IsNullOrWhiteSpace(_newDomain) || string.IsNullOrWhiteSpace(_newDomainCategory))">
+                    <i class="bi bi-plus-lg"></i> Add
+                </button>
+            </div>
+        </div>
+
+        <!-- New Category -->
+        <div class="row g-2 mb-4">
+            <div class="col-8 col-md-5">
+                <input type="text" class="form-control" placeholder="New category name"
+                       @bind="_newCategoryName" @onkeydown="@(async e => { if (e.Key == "Enter") await CreateCategory(); })" />
+            </div>
+            <div class="col-4 col-md-2">
+                <button class="btn btn-outline-success w-100" @onclick="CreateCategory" disabled="@string.IsNullOrWhiteSpace(_newCategoryName)">
+                    <i class="bi bi-folder-plus"></i> Create
+                </button>
+            </div>
+        </div>
+
+        <!-- Category Tabs -->
+        <ul class="nav nav-tabs mb-3">
+            @foreach (var cat in CategoryService.GetCategories())
+            {
+                <li class="nav-item">
+                    <button class="nav-link @(_selectedCategory == cat ? "active" : "")" @onclick="() => SelectCategory(cat)">
+                        <span class="badge @GetCategoryBadgeClass(cat) me-1">@(CategoryService.GetCategoryCounts().GetValueOrDefault(cat))</span>
+                        @cat
+                    </button>
+                </li>
+            }
+        </ul>
+
+        <!-- Domain List for Selected Category -->
+        @if (!string.IsNullOrEmpty(_selectedCategory))
+        {
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <h6 class="mb-0">Domains in <span class="badge @GetCategoryBadgeClass(_selectedCategory)">@_selectedCategory</span></h6>
+                <button class="btn btn-sm btn-outline-danger" @onclick="DeleteSelectedCategory">
+                    <i class="bi bi-trash"></i> Delete Category
+                </button>
+            </div>
+            <div class="border rounded" style="max-height: 300px; overflow-y: auto;">
+                <table class="table table-sm table-hover mb-0">
+                    <tbody>
+                        @foreach (var domain in _categoryDomains)
+                        {
+                            <tr>
+                                <td><code>@domain</code></td>
+                                <td style="width: 60px;" class="text-end">
+                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveDomain(domain)">
+                                        <i class="bi bi-x"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                        @if (_categoryDomains.Count == 0)
+                        {
+                            <tr><td colspan="2" class="text-center text-muted">No domains in this category.</td></tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        else
+        {
+            <p class="text-muted">Select a category tab above to view and manage its domains.</p>
+        }
+    </div>
+</div>
+
+<!-- Database -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-database me-2"></i>Database</h5>
+    </div>
+    <div class="card-body">
+        <div class="row g-3 mb-3">
+            <div class="col-4 col-md-4">
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-journal-text me-2 text-primary fs-4"></i>
+                    <div>
+                        <small class="text-muted">Query Logs</small>
+                        <div class="fw-bold">@_logCount.ToString("N0")</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-4 col-md-4">
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-bell me-2 text-warning fs-4"></i>
+                    <div>
+                        <small class="text-muted">Alerts</small>
+                        <div class="fw-bold">@_alertCount.ToString("N0")</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-4 col-md-4">
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-laptop me-2 text-info fs-4"></i>
+                    <div>
+                        <small class="text-muted">Devices</small>
+                        <div class="fw-bold">@_deviceCount.ToString("N0")</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <p class="text-muted mb-2">
+            Retention: Unflagged logs @Config["Database:UnflaggedRetentionHours"]h, Flagged logs @Config["Database:FlaggedRetentionDays"]d, Alerts @Config["Database:AlertRetentionDays"]d (auto-prune runs hourly)
+        </p>
+        <button class="btn btn-outline-danger" @onclick="PruneNow">
+            <i class="bi bi-trash"></i> Prune Old Logs Now
+        </button>
+        @if (_pruneMessage != null)
+        {
+            <div class="alert alert-info mt-2 mb-0">@_pruneMessage</div>
+        }
+    </div>
+</div>
+
+
+@code {
+    private int _logCount;
+    private int _alertCount;
+    private int _deviceCount;
+    private string? _blocklistMessage;
+    private string? _pruneMessage;
+    private string _newDomain = "";
+    private string _newDomainCategory = "";
+    private string _newCategoryName = "";
+    private string _selectedCategory = "";
+    private List<string> _categoryDomains = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadStatsAsync();
+        var categories = CategoryService.GetCategories();
+        if (categories.Count > 0)
+            SelectCategory(categories[0]);
+    }
+
+    private async Task LoadStatsAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _logCount = await db.DnsQueryLogs.CountAsync();
+        _alertCount = await db.Alerts.CountAsync();
+        _deviceCount = await db.Devices.CountAsync();
+    }
+
+    private void SelectCategory(string category)
+    {
+        _selectedCategory = category;
+        _categoryDomains = CategoryService.GetDomainsForCategory(category);
+    }
+
+    private async Task AddDomain()
+    {
+        if (string.IsNullOrWhiteSpace(_newDomain) || string.IsNullOrWhiteSpace(_newDomainCategory)) return;
+
+        await CategoryService.AddDomainAsync(_newDomain, _newDomainCategory);
+        _blocklistMessage = $"Added '{_newDomain}' to {_newDomainCategory}";
+        _newDomain = "";
+
+        if (_selectedCategory == _newDomainCategory)
+            SelectCategory(_selectedCategory);
+    }
+
+    private async Task RemoveDomain(string domain)
+    {
+        await CategoryService.RemoveDomainAsync(domain, _selectedCategory);
+        _blocklistMessage = $"Removed '{domain}' from {_selectedCategory}";
+        SelectCategory(_selectedCategory);
+    }
+
+    private async Task CreateCategory()
+    {
+        if (string.IsNullOrWhiteSpace(_newCategoryName)) return;
+
+        await CategoryService.CreateCategoryAsync(_newCategoryName);
+        _blocklistMessage = $"Created category '{_newCategoryName}'";
+        SelectCategory(_newCategoryName.Trim().ToLowerInvariant());
+        _newCategoryName = "";
+    }
+
+    private async Task DeleteSelectedCategory()
+    {
+        if (string.IsNullOrEmpty(_selectedCategory)) return;
+
+        var cat = _selectedCategory;
+        await CategoryService.DeleteCategoryAsync(cat);
+        _blocklistMessage = $"Deleted category '{cat}'";
+        _selectedCategory = "";
+        _categoryDomains = new();
+
+        var categories = CategoryService.GetCategories();
+        if (categories.Count > 0)
+            SelectCategory(categories[0]);
+    }
+
+    private async Task ReloadBlocklists()
+    {
+        await CategoryService.LoadBlocklistsAsync();
+        _blocklistMessage = $"Blocklists reloaded from files at {DateTime.Now:T}";
+
+        var categories = CategoryService.GetCategories();
+        if (categories.Count > 0 && !categories.Contains(_selectedCategory))
+            SelectCategory(categories[0]);
+        else if (!string.IsNullOrEmpty(_selectedCategory))
+            SelectCategory(_selectedCategory);
+
+        StateHasChanged();
+    }
+
+    private async Task PruneNow()
+    {
+        var unflaggedHours = Config.GetValue<int>("Database:UnflaggedRetentionHours");
+        if (unflaggedHours <= 0) unflaggedHours = 12;
+        var flaggedDays = Config.GetValue<int>("Database:FlaggedRetentionDays");
+        if (flaggedDays <= 0) flaggedDays = 7;
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        var unflaggedCutoff = DateTime.UtcNow.AddHours(-unflaggedHours);
+        var deletedUnflagged = await db.DnsQueryLogs
+            .Where(q => !q.IsFlagged && q.Timestamp < unflaggedCutoff)
+            .ExecuteDeleteAsync();
+
+        var flaggedCutoff = DateTime.UtcNow.AddDays(-flaggedDays);
+        var deletedFlagged = await db.DnsQueryLogs
+            .Where(q => q.IsFlagged && q.Timestamp < flaggedCutoff)
+            .ExecuteDeleteAsync();
+
+        var deletedAlerts = await db.Alerts
+            .Where(a => a.Timestamp < flaggedCutoff)
+            .ExecuteDeleteAsync();
+
+        _pruneMessage = $"Pruned {deletedUnflagged} unflagged logs (>{unflaggedHours}h), {deletedFlagged} flagged logs (>{flaggedDays}d), {deletedAlerts} alerts.";
+        await LoadStatsAsync();
+    }
+
+    private static string GetCategoryBadgeClass(string category) => category.ToLowerInvariant() switch
+    {
+        "adult" => "bg-danger",
+        "gambling" => "bg-warning text-dark",
+        "hacking" => "bg-info",
+        "malware" => "bg-dark",
+        "drugs" => "bg-success",
+        "violence" => "bg-danger",
+        "vpn-proxy" => "bg-primary",
+        "dating" => "bg-pink",
+        _ => "bg-secondary"
+    };
+}
